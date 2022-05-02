@@ -47,6 +47,12 @@ contract votingSystem {
         return true;
     }
 
+    // This Modifier Will Check Whether Voting Id Is Valid Or Not
+    modifier isValidVotingId(uint256 votingId) {
+        require((votingId < totalVotings), "Invalid Voting Id"); // It Will Check Whether Voting Exists.
+        _;
+    }
+
     // This Modifier Will Check That Whether Voting Id Available In Moderator Mapping Or Not.
     // If Voting Id Available In Moderator Mapping It Means They Has Actually Created Voting.
     modifier onlyModerator(uint256 votingId) {
@@ -63,7 +69,11 @@ contract votingSystem {
     }
 
     // This Method Will Start Voting And Only Moderator Can Invoke This Method.
-    function startVoting(uint256 votingId) public onlyModerator(votingId) {
+    function startVoting(uint256 votingId)
+        public
+        isValidVotingId(votingId)
+        onlyModerator(votingId)
+    {
         require(
             (votings[votingId].isVotingEnd == false),
             "Voting Is Ended, You Cannot Restart Them"
@@ -75,6 +85,7 @@ contract votingSystem {
     function getWinner(uint256 votingId)
         internal
         view
+        isValidVotingId(votingId)
         onlyModerator(votingId)
         returns (string memory)
     {
@@ -98,6 +109,7 @@ contract votingSystem {
     // Only Moderator Can Invoke This Method.
     function endVoting(uint256 votingId)
         public
+        isValidVotingId(votingId)
         onlyModerator(votingId)
         returns (string memory)
     {
@@ -115,7 +127,7 @@ contract votingSystem {
 
     // This Modifier Is Used To Verify Entered Details.
     modifier verifyDetails(uint256 votingId, uint256 candidateId) {
-        require(votingId <= totalVotings, "Invalid Voting Id"); // It Will Check Whether Voting Exists.
+        require((votingId < totalVotings), "Invalid Voting Id"); // It Will Check Whether Voting Exists.
         require(candidateId <= votings[votingId].candidates.length); // It Will Check Whether Candiadte Id Exists.
         _;
     }
@@ -136,13 +148,48 @@ contract votingSystem {
         return true;
     }
 
-    // This Method Will Display Result Of Votings, It Can Be Invoke By Anyone.
-    // It Will Be Accessible When Voting Will End.
-    function votingResults(uint256 votingId) public returns (string memory) {
+    // This Method Will Return List Of Candidates Of Specified Voting.
+    function candidatesName(uint256 votingId)
+        public
+        view
+        isValidVotingId(votingId)
+        returns (string[] memory)
+    {
+        string[] memory candidates = votings[votingId].candidates;
+        return candidates;
+    }
+
+    // This Modifier Will Check That Whether Voting Is End Or Not
+    modifier checkVotingEnd(uint256 votingId) {
         require(
             votings[votingId].isVotingEnd == true,
-            "Results Can Declare After End Of Voting"
+            "Result Can Declare After End Of Voting"
         );
+        _;
+    }
+
+    // This Method Will Return Votes Obtained By Candidates Of Specified Voting.
+    // It Will Be Accessible When Voting Will End.
+    function votesInVoting(uint256 votingId)
+        public
+        view
+        isValidVotingId(votingId)
+        checkVotingEnd(votingId)
+        returns (uint256[] memory)
+    {
+        uint256[] memory votes = votings[votingId].votes;
+        return votes;
+    }
+
+    // This Method Will Display Result Of Votings, It Can Be Invoke By Anyone.
+    // It Will Be Accessible When Voting Will End.
+    function votingResults(uint256 votingId)
+        public
+        view
+        isValidVotingId(votingId)
+        checkVotingEnd(votingId)
+        returns (string memory)
+    {
         string memory winner = getWinner(votingId);
         return winner;
     }
