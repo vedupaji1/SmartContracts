@@ -1,4 +1,8 @@
 // SPDX-License-Identifier:GPL-3.0
+/*   
+  Note:- This Contract Was Created When I Had Less Experience Of Solidity,
+         If You Found Any Mistake So You Can Send Me Pull Request.
+*/
 pragma solidity ^0.8.0;
 
 interface ERCStandardFunctions {
