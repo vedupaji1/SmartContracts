@@ -3,6 +3,13 @@ pragma solidity ^0.8.0;
 
 import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
+// import "hardhat/console.sol";
+
+interface CEth {
+    function mint() external payable;
+
+    function redeemUnderlying(uint256) external returns (uint256);
+}
 
 contract chakra is VRFConsumerBaseV2 {
     // This State Variables Are Used To Get Random Number, This Are Related To Chainlink VRF.
@@ -17,35 +24,9 @@ contract chakra is VRFConsumerBaseV2 {
     uint32 numWords = 1;
     uint256 public s_requestId;
 
-    struct _chakra {
-        address creator;
-        address[] participants;
-        uint256 baseValue;
-        uint256 startTime;
-        uint256 creatorShare;
-        bool isTrulyRandom;
-    }
+    constructor() VRFConsumerBaseV2(vrfCoordinator) {}
 
-    address contractCreator = msgSender();
-    mapping(uint256 => _chakra) private chakras; // It Will Store Information About Chakras
-    mapping(uint256 => bool) public isChakraExists; // We Can Also Put It Inside Struct But It Saves Gas Cost.
-    mapping(uint256 => uint256) public winners; // It Will Store Truly Random Number For Every Chakra.
-    int256 public lock = -1;
-
-    constructor() VRFConsumerBaseV2(vrfCoordinator) {
-        _chakra storage temp = chakras[0];
-        temp.creator = msgSender();
-        temp.participants = [
-            msgSender(),
-            0x3D21439ec0282Ecb775a80c7A772f154aE08609D
-        ];
-        temp.baseValue = 0;
-        temp.startTime = block.timestamp;
-        temp.creatorShare = 0;
-        isChakraExists[0] = true;
-    }
-
-    function requestRandomWords() public {
+    function requestRandomWords() private {
         // This Method Is Used To Get Random Value And It Will Call "fulfillRandomWords" Method.
         s_requestId = COORDINATOR.requestRandomWords(
             keyHash,
@@ -56,14 +37,55 @@ contract chakra is VRFConsumerBaseV2 {
         );
     }
 
+    // This Variable, "depositETH" And "withdrawn" Are Realated To Compound Protocol.
+    CEth contractInter = CEth(0xd6801a1DfFCd0a410336Ef88DeF4320D6DF1883e); // Reference Variable Of CEth Interface And It Takes Contract Address For Rinkeby Network.
+
+    function depositETH() public payable {
+        contractInter.mint{value: msg.value, gas: 250000000}();
+    }
+
+    function withdrawn(uint256 amount) internal returns (uint256) {
+        //uint256 resVal = contractInter.redeem(amount);
+        return contractInter.redeemUnderlying(amount);
+    }
+
+    event ChakraCreated(
+        address indexed by,
+        uint256 indexed id,
+        uint256 value,
+        uint256 time
+    );
+    event ChakraJoined(
+        address indexed by,
+        uint256 indexed id,
+        uint256 value,
+        uint256 time
+    );
+    event ChakraEnd(address indexed winner, uint256 indexed id, uint256 value);
+
+    struct _chakra {
+        address creator;
+        address[] participants;
+        uint256 baseValue;
+        uint256 creatorShare;
+        uint256 startTime;
+        uint256 endTime;
+        uint256 winner;
+        bool isTrulyRandom;
+    }
+
+    address public contractCreator = msgSender();
+    mapping(uint256 => _chakra) public chakras; // It Will Store Information About Chakras.
+    int256 public lock = -1; // For Applying Locking Mechanism.
+
     //uint public chakraFee=1200000000000000;
     uint256 public chakraFee = 0; // Chakra Fee Is Taken For Recovering Expense Of Truly Random Number
     uint256 public minOverTime = 60; // It Refers To Minimum Time After Which User Can End Chakra
     uint256 public minBaseValue = 0; //  It Refers To Minimum Base Value Of Chakra
     uint256 public maxCreatorShare = 90; // It Refers To Maximum Share Value Of Chakra Creator
-    uint256 public randNonce = 0;
+    uint256 private randNonce = 0;
 
-    function msgSender() public view returns (address) {
+    function msgSender() private view returns (address) {
         return msg.sender;
     }
 
@@ -72,7 +94,8 @@ contract chakra is VRFConsumerBaseV2 {
         override
     {
         uint256 id = uint256(lock);
-        winners[id] = randomWords[0];
+        uint256 randomValue = randomWords[0] % chakras[id].participants.length;
+        chakras[id].winner = randomValue + 1;
         lock = -1;
     }
 
@@ -100,12 +123,21 @@ contract chakra is VRFConsumerBaseV2 {
         maxCreatorShare = _maxCreatorShare;
     }
 
-    function contractBalance() public view returns (uint256) {
-        return address(this).balance;
+    function checkRandNonce() public view onlyOwner returns (uint256) {
+        return randNonce;
+    }
+
+    function setRandNonce(uint256 _randNonce) public onlyOwner {
+        randNonce = _randNonce;
     }
 
     function withdrawFunds(uint256 amount) public onlyOwner {
+        contractInter.redeemUnderlying(amount);
         payable(contractCreator).transfer(amount);
+    }
+
+    function contractBalance() public view returns (uint256) {
+        return address(this).balance;
     }
 
     // Chakra Can Be Created Using This Method.
@@ -117,7 +149,7 @@ contract chakra is VRFConsumerBaseV2 {
         uint256 _share,
         bool _isTrulyRandom
     ) public payable {
-        require(isChakraExists[id] == false, "Chakra Already Exists");
+        require(chakras[id].creator == address(0), "Chakra Already Exists");
         require(
             (_baseValue > minBaseValue && _share < maxCreatorShare),
             "Creator Share Should Lesser Than MaxShare Value And Passed Value Should Greater Than MinBase Value."
@@ -133,21 +165,21 @@ contract chakra is VRFConsumerBaseV2 {
                 "Your Passed Value Should Greater Or Equal To BaseValue"
             );
         }
-
         _chakra storage newChakra = chakras[id];
         address _creator = msgSender();
         newChakra.creator = _creator;
         newChakra.participants = [_creator];
         newChakra.baseValue = _baseValue;
-        newChakra.startTime = block.timestamp;
         newChakra.creatorShare = _share;
+        newChakra.startTime = block.timestamp;
         newChakra.isTrulyRandom = _isTrulyRandom;
-        isChakraExists[id] = true;
+        depositETH();
+        emit ChakraCreated(_creator, id, msg.value, block.timestamp);
     }
 
     // This Method Will Check That Whether Participant Exists Or Not.
     function isPraticipantExists(address _participant, uint256 id)
-        internal
+        private
         view
         returns (bool)
     {
@@ -166,8 +198,12 @@ contract chakra is VRFConsumerBaseV2 {
 
     // Anyone Can Join Chakra By Passing Id Of Chakra In This Method.
     function joinChakra(uint256 id) public payable {
-        require(isChakraExists[id] == true, "Chakra Not Exists");
-        require(winners[id] == 0, "Winner Of This Chakra Is Declared");
+        _chakra memory tempChakra = chakras[id];
+        require(tempChakra.creator != address(0), "Chakra Not Exists");
+        require(tempChakra.winner == 0, "Chakra Is Ended");
+        if (tempChakra.isTrulyRandom == true) {
+            require(lock == -1, "Now This Method Is Lock And Chakra Is End");
+        }
         require(
             msg.value >= chakras[id].baseValue,
             "Your Passed Value Should Greater Or Equal To BaseValue"
@@ -178,24 +214,27 @@ contract chakra is VRFConsumerBaseV2 {
             "User Already Exists"
         );
         chakras[id].participants.push(_participant);
+        depositETH();
+        emit ChakraJoined(_participant, id, msg.value, block.timestamp);
     }
 
     // Using This Method Chakra Creator Chakra Can End Or Stop.
     // Only Chakra Creator Can Access This Method.
     // Basically Here "requestRandomWords" Will Be Called Which Will Assign Random Value To Winners Mapping
     function endChakra(uint256 id) public {
-        require(lock == -1, "Now Method Is Lock Try After Some Time");
-        require(isChakraExists[id] == true, "Chakra Not Exists");
         _chakra memory tempChakra = chakras[id];
-        require(
-            tempChakra.startTime + minOverTime < block.timestamp,
-            "Chakra Can End After MinOverTime"
-        );
+        require(tempChakra.creator != address(0), "Chakra Not Exists");
+        require(tempChakra.winner == 0, "Chakra Is Ended");
         require(
             tempChakra.creator == msgSender(),
             "Only Chakra Creator Can Access This Method"
         );
+        require(
+            tempChakra.startTime + minOverTime < block.timestamp,
+            "Chakra Can End After MinOverTime"
+        );
         if (tempChakra.isTrulyRandom == true) {
+            require(lock == -1, "Now This Method Is Lock Try After Some Time");
             lock = int256(id);
             requestRandomWords();
         } else {
@@ -206,14 +245,17 @@ contract chakra is VRFConsumerBaseV2 {
                     abi.encodePacked(block.timestamp, _creator, randNonce)
                 )
             ) % tempChakra.participants.length;
-            isChakraExists[id] = false;
+            chakras[id].winner = randomNumber + 1;
+            chakras[id].endTime = block.timestamp;
             uint256 totalFund = tempChakra.participants.length *
                 tempChakra.baseValue;
+            withdrawn(totalFund);
             uint256 _creatorShare = (totalFund * tempChakra.creatorShare) / 100;
             totalFund -= _creatorShare;
             payable(_creator).transfer(_creatorShare);
             address winnerAddress = tempChakra.participants[randomNumber];
             payable(winnerAddress).transfer(totalFund);
+            emit ChakraEnd(winnerAddress, id, totalFund);
         }
     }
 
@@ -221,20 +263,26 @@ contract chakra is VRFConsumerBaseV2 {
     // Anyone Can Access This Method.
     // Chakra Creator Will Get Funds As Per Their Share Amount And Rest Of Funds Will Sended To Winner.
     function distributeFunds(uint256 id) public {
-        require(isChakraExists[id] == true, "Chakra Not Exists");
-        uint256 winner = winners[id];
-        require(winner != 0, "Winner Is Not Declared, Wait For Few Time");
+        require(chakras[id].creator != address(0), "Chakra Not Exists");
         _chakra memory tempChakra = chakras[id];
-        address _creator = msgSender();
-        isChakraExists[id] = false;
+        require(
+            tempChakra.isTrulyRandom == true && tempChakra.endTime == 0,
+            "Only Truly Random Chakra Can Be Accesed And Before EndTime"
+        );
+        require(
+            tempChakra.winner != 0,
+            "Winner Is Not Declared Or Random Value Is Not Obtained"
+        );
+        chakras[id].endTime = block.timestamp;
+        address _creator = tempChakra.creator;
+        address winnerAddress = tempChakra.participants[tempChakra.winner - 1];
         uint256 totalFund = tempChakra.participants.length *
             tempChakra.baseValue;
+        withdrawn(totalFund);
         uint256 _creatorShare = (totalFund * tempChakra.creatorShare) / 100;
         totalFund -= _creatorShare;
         payable(_creator).transfer(_creatorShare);
-        uint256 randomNumber = winner % tempChakra.participants.length;
-        address winnerAddress = tempChakra.participants[randomNumber];
         payable(winnerAddress).transfer(totalFund);
-        winners[id] = 0;
+        emit ChakraEnd(winnerAddress, id, totalFund);
     }
 }
