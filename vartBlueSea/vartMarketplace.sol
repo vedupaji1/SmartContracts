@@ -14,21 +14,22 @@ contract vartMarketPlace {
     }
 
     uint256 public totalListings;
-    item[] private listedItems;
+    item[] public listedItems;
 
     address public contractAdd = address(this);
 
     event ItemListed(
         address indexed by,
         uint256 indexed id,
-        address indexed contractAddress,
-        uint256 price
+        address contractAddress,
+        uint256 price,
+        uint256 indexed listingId
     );
     event ItemSold(
         address indexed from,
         address indexed to,
-        uint256 indexed listingId,
-        uint256 id
+        uint256 id,
+        uint256 indexed listingId
     );
 
     function listItem(
@@ -47,7 +48,7 @@ contract vartMarketPlace {
         newItem.contractInstance.transferFrom(msg.sender, address(this), id);
         totalListings++;
         listedItems.push(newItem);
-        emit ItemListed(msg.sender, id, contractAddress, price);
+        emit ItemListed(msg.sender, id, contractAddress, price, totalListings);
     }
 
     function purchaseItem(uint256 listingId) public payable returns (bool) {
@@ -65,7 +66,7 @@ contract vartMarketPlace {
             msg.sender,
             tempItem.id
         );
-        emit ItemSold(tempItem.owner, msg.sender, listingId, tempItem.id);
+        emit ItemSold(tempItem.owner, msg.sender, tempItem.id, listingId);
         return isDone;
     }
 
@@ -73,4 +74,6 @@ contract vartMarketPlace {
         item[] memory tempListings = listedItems;
         return tempListings;
     }
+
+    // 0x1151d60cf5d85678e4e879cb12f8a4e04f2268a8
 }
