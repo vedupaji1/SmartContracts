@@ -73,6 +73,4 @@ contract vartMarketPlace {
         item[] memory tempListings = listedItems;
         return tempListings;
     }
-
-    // 0x1151d60cf5d85678e4e879cb12f8a4e04f2268a8
 }
